@@ -2,9 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER = 'bishnu2000'
         DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
-        IMAGE_NAME = 'devops-build'
     }
 
     options {
@@ -21,49 +19,28 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build and Push') {
             steps {
-                script {
-                    if (env.BRANCH_NAME == 'dev') {
-                        sh "docker build -t ${DOCKERHUB_USER}/dev:${BUILD_NUMBER} ."
-                        sh "docker tag ${DOCKERHUB_USER}/dev:${BUILD_NUMBER} ${DOCKERHUB_USER}/dev:latest"
-                    }
-
-                    if (env.BRANCH_NAME == 'main') {
-                        sh "docker build -t ${DOCKERHUB_USER}/prod:${BUILD_NUMBER} ."
-                        sh "docker tag ${DOCKERHUB_USER}/prod:${BUILD_NUMBER} ${DOCKERHUB_USER}/prod:latest"
-                    }
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKERHUB_CREDENTIALS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                    sh 'docker pull nginx:stable-alpine'
+                    sh "bash build.sh ${env.BRANCH_NAME}"
                 }
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Deploy') {
             steps {
-                script {
-                    withCredentials([
-                        usernamePassword(
-                            credentialsId: "${DOCKERHUB_CREDENTIALS}",
-                            usernameVariable: 'DOCKER_USER',
-                            passwordVariable: 'DOCKER_PASSWORD'
-                        )
-                    ]) {
-
-                        sh '''
-                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USER" --password-stdin
-                        '''
-
-                        if (env.BRANCH_NAME == 'dev') {
-                            sh "docker push ${DOCKERHUB_USER}/dev:${BUILD_NUMBER}"
-                            sh "docker push ${DOCKERHUB_USER}/dev:latest"
-                        }
-
-                        if (env.BRANCH_NAME == 'main') {
-                            sh "docker push ${DOCKERHUB_USER}/prod:${BUILD_NUMBER}"
-                            sh "docker push ${DOCKERHUB_USER}/prod:latest"
-                        }
-
-                        sh 'docker logout'
-                    }
+                withCredentials([usernamePassword(
+                    credentialsId: "${DOCKERHUB_CREDENTIALS}",
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh 'bash deploy.sh'
                 }
             }
         }
@@ -73,7 +50,6 @@ pipeline {
         success {
             echo "Pipeline completed successfully for branch: ${BRANCH_NAME}"
         }
-
         failure {
             echo "Pipeline failed for branch: ${BRANCH_NAME}"
         }
