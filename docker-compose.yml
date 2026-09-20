@@ -1,9 +1,9 @@
+name: devops-build
+
 services:
-  devops-build-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: devops-build:latest
+  app:
+    build: .
+    image: ${IMAGE:-devops-build:local}
     container_name: devops-build-app
     ports:
       - "80:80"

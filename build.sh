@@ -1,13 +1,33 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Builds the image and pushes it to the branch-mapped Docker Hub repository.
+#   dev          -> <DOCKER_USER>/dev   (public)
+#   main/master  -> <DOCKER_USER>/prod  (private)
+set -euo pipefail
+cd "$(dirname "$0")"
 
-set -e
+: "${DOCKER_USER:?DOCKER_USER must be set}"
+: "${DOCKER_PASS:?DOCKER_PASS must be set}"
 
-IMAGE_NAME="devops-build"
-IMAGE_TAG="latest"
+BRANCH="${1:-${BRANCH_NAME:-${GIT_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}}}"
+BRANCH="${BRANCH#origin/}"
+TAG="${BUILD_NUMBER:-$(git rev-parse --short HEAD)}"
 
-echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+case "$BRANCH" in
+  dev)         REPO="dev"  ;;
+  main|master) REPO="prod" ;;
+  *) echo "ERROR: branch '${BRANCH}' is not mapped to a Docker Hub repository." >&2; exit 1 ;;
+esac
 
-docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" .
+IMAGE="${DOCKER_USER}/${REPO}"
 
-echo "Docker image built successfully."
-docker images "${IMAGE_NAME}"
+echo ">> Building ${IMAGE}:${TAG} (branch: ${BRANCH})"
+docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
+
+echo ">> Pushing ${IMAGE}:${TAG} and ${IMAGE}:latest"
+echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+docker push "${IMAGE}:${TAG}"
+docker push "${IMAGE}:latest"
+docker logout >/dev/null
+
+echo "IMAGE=${IMAGE}:${TAG}" > image.env
+echo ">> Build complete: ${IMAGE}:${TAG}"
